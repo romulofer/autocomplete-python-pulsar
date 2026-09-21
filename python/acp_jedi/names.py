@@ -52,6 +52,36 @@ def definition_type(definition: Any) -> str:
     return BASIC_TYPES.get(definition.type, definition.type)
 
 
+#: Jedi ``type`` values that map straight onto a highlight class.
+HIGHLIGHT_TYPES = {"function", "class", "param", "module", "property"}
+
+
+def highlight_type(name: Any) -> str:
+    """The highlight class for a name, tuned for coloring rather than icons.
+
+    Unlike :func:`definition_type` - which serves autocomplete icons and so
+    folds ``param`` into ``variable`` and ``module`` into ``import`` - this keeps
+    the distinctions that are worth a color of their own. Everything it cannot
+    place (statements, instances, unresolved references) becomes ``variable``,
+    the plain-identifier class.
+    """
+    name_type = getattr(name, "type", None)
+    try:
+        is_built_in = name.in_builtin_module()
+    except Exception:
+        is_built_in = False
+
+    if name_type not in ("import", "keyword") and is_built_in:
+        return "builtin"
+    if name_type == "statement" and getattr(name, "name", "").isupper():
+        return "constant"
+    if name_type == "import":
+        return "module"
+    if name_type in HIGHLIGHT_TYPES:
+        return name_type
+    return "variable"
+
+
 def signatures(definition: Any) -> list[Any]:
     """Signatures of a definition, or an empty list when it has none.
 

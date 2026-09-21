@@ -121,6 +121,7 @@ class JediSession:
             "usages": self._usages,
             "methods": self._methods,
             "arguments": self._arguments,
+            "highlights": self._highlights,
         }
 
     # --- lookups --------------------------------------------------------
@@ -214,3 +215,15 @@ class JediSession:
                 script, line, column, use_snippets=config.use_snippets
             ),
         )
+
+    def _highlights(
+        self,
+        script: Any,
+        line: int,
+        column: int,
+        identifier: str | None,
+        config: RequestConfig,
+        request: dict[str, Any],
+    ) -> dict[str, Any]:
+        # Whole-file scan; the cursor position is irrelevant.
+        return protocol.response(identifier, serializers.highlights(script))

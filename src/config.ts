@@ -27,6 +27,7 @@ export interface PythonSettings {
   fuzzyMatcher: boolean;
   triggerCompletionRegex: string;
   showTooltips: boolean;
+  semanticHighlight: boolean;
   suggestionPriority: number;
   /** Minutes; `0` keeps the daemon alive for the whole session. */
   daemonIdleTimeout: number;
@@ -121,6 +122,7 @@ export function resolveSettings(raw: RawSettings = {}): PythonSettings {
       DEFAULT_TRIGGER_REGEX
     ),
     showTooltips: asBoolean(raw.showTooltips, false),
+    semanticHighlight: asBoolean(raw.semanticHighlight, false),
     suggestionPriority: asNumber(raw.suggestionPriority, 3),
     daemonIdleTimeout: Math.max(0, asNumber(raw.daemonIdleTimeout, 10)),
     outputProviderErrors: asBoolean(raw.outputProviderErrors, false),
@@ -229,6 +231,14 @@ export const configSchema = {
     title: 'Show Tooltips',
     description:
       'Show the docstring of the symbol under the cursor as an editor overlay.'
+  },
+  semanticHighlight: {
+    type: 'boolean',
+    default: false,
+    order: 19,
+    title: 'Semantic Highlighting',
+    description:
+      'Recolor identifiers by what Jedi knows them to be - function, class, parameter, builtin, constant, module - layered on top of the grammar. Updates shortly after you stop typing. Needs a working interpreter, same as completions.'
   },
   suggestionPriority: {
     type: 'integer',

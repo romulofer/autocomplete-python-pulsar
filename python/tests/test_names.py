@@ -72,6 +72,37 @@ def test_definition_type_survives_an_accessor_that_raises():
     assert names.definition_type(Exploding()) == "function"
 
 
+# --- highlight_type -------------------------------------------------------
+
+
+def test_highlight_type_keeps_the_distinctions_worth_a_color():
+    # Unlike definition_type, params and modules keep their own class.
+    assert names.highlight_type(FakeName(type="param")) == "param"
+    assert names.highlight_type(FakeName(type="module")) == "module"
+    assert names.highlight_type(FakeName(type="function")) == "function"
+    assert names.highlight_type(FakeName(type="class")) == "class"
+
+
+def test_highlight_type_treats_an_import_binding_as_a_module():
+    assert names.highlight_type(FakeName(type="import")) == "module"
+
+
+def test_highlight_type_folds_the_plain_identifiers_into_variable():
+    assert names.highlight_type(FakeName(type="statement")) == "variable"
+    assert names.highlight_type(FakeName(type="instance")) == "variable"
+
+
+def test_highlight_type_detects_builtins_and_constants():
+    assert names.highlight_type(FakeName(type="function", builtin=True)) == "builtin"
+    assert names.highlight_type(FakeName(name="MAX", type="statement")) == "constant"
+
+
+def test_highlight_type_survives_an_accessor_that_raises():
+    # in_builtin_module() raises; the builtin check swallows it and the type
+    # still resolves.
+    assert names.highlight_type(Exploding()) == "function"
+
+
 # --- parameters -----------------------------------------------------------
 
 

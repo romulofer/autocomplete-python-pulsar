@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.5.0
+
+### Added
+
+- **Semantic highlighting.** A new **Semantic Highlighting** setting (off by
+  default) recolors identifiers by what Jedi resolves them to be - function,
+  class, parameter, builtin, constant, module - layered on top of the grammar,
+  which keeps coloring keywords, strings and numbers. Highlights refresh shortly
+  after you stop typing and are skipped in very large files. Needs a working
+  interpreter, the same as completions. The palette lives in the package
+  stylesheet and can be overridden per theme.
+
 ## 2.4.4
 
 ### Added

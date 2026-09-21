@@ -43,6 +43,7 @@ const registry_1 = require("./interpreters/registry");
 const locators_1 = require("./interpreters/locators");
 const jedi_daemon_1 = require("./daemon/jedi-daemon");
 const scope_helpers_1 = require("./editor/scope-helpers");
+const semantic_highlight_1 = require("./editor/semantic-highlight");
 const completion_rules_1 = require("./editor/completion-rules");
 const definitions_view_1 = require("./views/definitions-view");
 const usages_view_1 = require("./views/usages-view");
@@ -63,6 +64,12 @@ const DISABLE_FOR_SELECTOR = '.source.python .comment, .source.python .string';
 const DISABLE_FOR_SELECTOR_PARSED = (0, scope_helpers_1.parseSelectorList)(DISABLE_FOR_SELECTOR);
 /** The grammars this package is willing to drive. */
 const PYTHON_SCOPE_NAMES = ['source.python'];
+/**
+ * Above this many lines, semantic highlighting is skipped: a whole-file Jedi
+ * scan on every typing pause stops being cheap, and the grammar still colors
+ * the buffer on its own.
+ */
+const SEMANTIC_HIGHLIGHT_LINE_CAP = 5000;
 /** `dist/` is the build output; the daemon script sits beside it. */
 const DAEMON_SCRIPT = path.resolve(__dirname, '..', 'python', 'completion.py');
 const SETTINGS_URI = 'atom://config/packages/autocomplete-python-pulsar';
@@ -245,6 +252,13 @@ class PythonProvider {
         this.disposables.add(atom.config.observe('autocomplete-python-pulsar.suggestionPriority', (value) => {
             this.suggestionPriority = Number(value) || 3;
         }), atom.config.onDidChange('autocomplete-python-pulsar.triggerCompletionRegex', () => this.updateTriggerCompletionRegex()), atom.config.onDidChange('autocomplete-python-pulsar.outputFontSize', () => this.runPanel?.setFontSize(this.settings().outputFontSize)), 
+        // Toggling semantic highlighting adds or tears down its per-editor
+        // listeners, so re-wire every open editor.
+        atom.config.onDidChange('autocomplete-python-pulsar.semanticHighlight', () => {
+            for (const editor of atom.workspace.getTextEditors()) {
+                this.attachToEditor(editor);
+            }
+        }), 
         // Anything that changes which interpreter or which packages Jedi sees
         // invalidates both the interpreter lookup and every cached response.
         atom.config.onDidChange('autocomplete-python-pulsar.pythonPaths', () => this.reloadDaemon()), atom.config.onDidChange('autocomplete-python-pulsar.extraPaths', () => this.reloadDaemon()), atom.config.onDidChange('autocomplete-python-pulsar.selectedInterpreter', () => this.reloadDaemon()), atom.project.onDidChangePaths(() => this.reloadDaemon()));
@@ -266,31 +280,41 @@ class PythonProvider {
         atom_host_1.atomNotifier.warning('autocomplete-python-pulsar: invalid completion trigger regex, using the default.', { detail: error, dismissable: true });
     }
     observeEditor(editor) {
-        const attach = () => {
-            this.detachFromEditor(editor);
-            if (!isPythonEditor(editor))
+        this.attachToEditor(editor);
+        this.disposables.add(editor.onDidChangeGrammar(() => this.attachToEditor(editor)));
+    }
+    /** (Re)wire the per-editor listeners, replacing any already in place. */
+    attachToEditor(editor) {
+        this.detachFromEditor(editor);
+        if (!isPythonEditor(editor))
+            return;
+        const disposables = new atom_1.CompositeDisposable();
+        // Argument completion used to hang off a raw `keyup` listener matching
+        // the `^(` keystroke, which silently did nothing on any keyboard layout
+        // where `(` is not shift-9. Watching the buffer instead is
+        // layout-independent. Upstream issues #416, #455, #465.
+        disposables.add(editor.getBuffer().onDidChangeText(({ changes }) => {
+            if (!changes.some((change) => change.newText.includes('(')))
                 return;
-            const disposables = new atom_1.CompositeDisposable();
-            // Argument completion used to hang off a raw `keyup` listener matching
-            // the `^(` keystroke, which silently did nothing on any keyboard layout
-            // where `(` is not shift-9. Watching the buffer instead is
-            // layout-independent. Upstream issues #416, #455, #465.
-            disposables.add(editor.getBuffer().onDidChangeText(({ changes }) => {
-                if (!changes.some((change) => change.newText.includes('(')))
-                    return;
-                void this.completeArguments(editor, editor.getCursorBufferPosition(), false);
+            void this.completeArguments(editor, editor.getCursorBufferPosition(), false);
+        }));
+        if (this.settings().showTooltips) {
+            disposables.add(editor.onDidChangeCursorPosition((event) => {
+                void this.tooltips.handleCursorChange(editor, event);
             }));
-            if (this.settings().showTooltips) {
-                disposables.add(editor.onDidChangeCursorPosition((event) => {
-                    void this.tooltips.handleCursorChange(editor, event);
-                }));
-            }
-            disposables.add(editor.onDidDestroy(() => this.detachFromEditor(editor)));
-            this.editorDisposables.set(editor.id, disposables);
-            log.debug('Attached to editor', editor.id);
-        };
-        attach();
-        this.disposables.add(editor.onDidChangeGrammar(() => attach()));
+        }
+        if (this.settings().semanticHighlight) {
+            const highlighter = new semantic_highlight_1.SemanticHighlighter(editor);
+            disposables.add({ dispose: () => highlighter.dispose() });
+            const refresh = () => void this.refreshHighlights(editor, highlighter);
+            // `onDidStopChanging` is already debounced by Pulsar, so Jedi is asked
+            // once the user pauses rather than on every keystroke.
+            disposables.add(editor.getBuffer().onDidStopChanging(refresh));
+            refresh();
+        }
+        disposables.add(editor.onDidDestroy(() => this.detachFromEditor(editor)));
+        this.editorDisposables.set(editor.id, disposables);
+        log.debug('Attached to editor', editor.id);
     }
     detachFromEditor(editor) {
         const disposables = this.editorDisposables.get(editor.id);
@@ -367,6 +391,26 @@ class PythonProvider {
     async getUsages(editor, bufferPosition) {
         const response = await this.daemon.send(this.buildRequest('usages', editor, bufferPosition));
         return response.results;
+    }
+    /** Semantic classification of every name in the buffer. */
+    async getHighlights(editor) {
+        // A whole-file scan; the position is only there to key the request cache.
+        const request = this.buildRequest('highlights', editor, {
+            row: 0,
+            column: 0
+        });
+        const cached = this.daemon.cachedResponse(request.id);
+        const response = cached ?? (await this.daemon.send(request));
+        return response.results;
+    }
+    /**
+     * Refresh one editor's semantic decorations, skipping files large enough that
+     * a per-pause Jedi scan would be felt.
+     */
+    async refreshHighlights(editor, highlighter) {
+        if (editor.getLineCount() > SEMANTIC_HIGHLIGHT_LINE_CAP)
+            return;
+        highlighter.update(await this.getHighlights(editor));
     }
     /**
      * Ask Jedi what a subclass could override, by completing `self.` inside a

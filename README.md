@@ -48,6 +48,9 @@ ppm install autocomplete-python-pulsar
   `super()`-calling stub.
 - **Tooltips** showing the docstring of the symbol under the cursor. Off by
   default.
+- **Semantic highlighting**: recolor identifiers by what Jedi knows them to be -
+  function, class, parameter, builtin, constant, module - layered over the
+  grammar. Off by default; see `Semantic Highlighting`.
 - **Run button** in the status bar: run the current file with the interpreter
   the package discovered, with output in a dock pane. `F5`, or click the button
   again to stop. The pane takes stdin, so scripts that call `input()` work.

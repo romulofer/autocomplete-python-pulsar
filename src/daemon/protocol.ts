@@ -20,7 +20,8 @@ export type LookupKind =
   | 'usages'
   | 'methods'
   | 'arguments'
-  | 'tooltip';
+  | 'tooltip'
+  | 'highlights';
 
 export interface RequestConfig {
   extraPaths: string[];
@@ -81,6 +82,19 @@ export interface MethodDefinition {
   fileName: string | null;
   line: number | null;
   column: number | null;
+}
+
+/**
+ * One semantically classified name span for the `highlights` lookup. Rows are
+ * zero-based, ready to hand to `markBufferRange`.
+ */
+export interface Highlight {
+  /** A `names.definition_type` class, e.g. `function`, `param`, `builtin`. */
+  type: string;
+  line: number;
+  column: number;
+  /** Length of the name in characters; the span never crosses a line. */
+  length: number;
 }
 
 export interface DaemonResponse<T = unknown> {

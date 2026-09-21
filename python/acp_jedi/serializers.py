@@ -250,6 +250,37 @@ def tooltip(found: Iterable[Any]) -> list[dict[str, Any]]:
     return []
 
 
+def highlights(script: Any) -> list[dict[str, Any]]:
+    """Every name in the module, classified for semantic highlighting.
+
+    Rows are converted to zero-based, matching ``markBufferRange``. Keywords are
+    skipped: the editor's grammar already colors them, and this layer only
+    refines identifiers (function vs class vs parameter vs builtin, and so on).
+    Each span is the length of the bare name and never crosses a line.
+    """
+    try:
+        found = script.get_names(
+            all_scopes=True, definitions=True, references=True
+        )
+    except Exception:
+        return []
+
+    results: list[dict[str, Any]] = []
+    for name in found:
+        text = getattr(name, "name", "") or ""
+        if not text or getattr(name, "type", None) == "keyword":
+            continue
+        results.append(
+            {
+                "type": names.highlight_type(name),
+                "line": name.line - 1,
+                "column": name.column,
+                "length": len(text),
+            }
+        )
+    return results
+
+
 def usages(found: Iterable[Any]) -> list[dict[str, Any]]:
     """Every reference to a name. Lines stay one-based, as Jedi reports them."""
     return [

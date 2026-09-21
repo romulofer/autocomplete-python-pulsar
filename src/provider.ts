@@ -20,6 +20,7 @@ import { JediDaemon } from './daemon/jedi-daemon';
 import type {
   Definition,
   DaemonRequest,
+  Highlight,
   LookupKind,
   MethodDefinition,
   RequestConfig,
@@ -27,6 +28,7 @@ import type {
   Usage
 } from './daemon/protocol';
 import { parseSelectorList, scopesMatchSelectors } from './editor/scope-helpers';
+import { SemanticHighlighter } from './editor/semantic-highlight';
 import {
   filterSuggestions,
   isArgumentCompletionSite,
@@ -55,6 +57,13 @@ const DISABLE_FOR_SELECTOR_PARSED = parseSelectorList(DISABLE_FOR_SELECTOR);
 
 /** The grammars this package is willing to drive. */
 const PYTHON_SCOPE_NAMES = ['source.python'];
+
+/**
+ * Above this many lines, semantic highlighting is skipped: a whole-file Jedi
+ * scan on every typing pause stops being cheap, and the grammar still colors
+ * the buffer on its own.
+ */
+const SEMANTIC_HIGHLIGHT_LINE_CAP = 5000;
 
 /** `dist/` is the build output; the daemon script sits beside it. */
 const DAEMON_SCRIPT = path.resolve(__dirname, '..', 'python', 'completion.py');
@@ -310,6 +319,13 @@ export class PythonProvider {
       atom.config.onDidChange('autocomplete-python-pulsar.outputFontSize', () =>
         this.runPanel?.setFontSize(this.settings().outputFontSize)
       ),
+      // Toggling semantic highlighting adds or tears down its per-editor
+      // listeners, so re-wire every open editor.
+      atom.config.onDidChange('autocomplete-python-pulsar.semanticHighlight', () => {
+        for (const editor of atom.workspace.getTextEditors()) {
+          this.attachToEditor(editor);
+        }
+      }),
       // Anything that changes which interpreter or which packages Jedi sees
       // invalidates both the interpreter lookup and every cached response.
       atom.config.onDidChange('autocomplete-python-pulsar.pythonPaths', () =>
@@ -349,43 +365,58 @@ export class PythonProvider {
   }
 
   private observeEditor(editor: TextEditor): void {
-    const attach = (): void => {
-      this.detachFromEditor(editor);
-      if (!isPythonEditor(editor)) return;
+    this.attachToEditor(editor);
+    this.disposables.add(
+      editor.onDidChangeGrammar(() => this.attachToEditor(editor))
+    );
+  }
 
-      const disposables = new CompositeDisposable();
+  /** (Re)wire the per-editor listeners, replacing any already in place. */
+  private attachToEditor(editor: TextEditor): void {
+    this.detachFromEditor(editor);
+    if (!isPythonEditor(editor)) return;
 
-      // Argument completion used to hang off a raw `keyup` listener matching
-      // the `^(` keystroke, which silently did nothing on any keyboard layout
-      // where `(` is not shift-9. Watching the buffer instead is
-      // layout-independent. Upstream issues #416, #455, #465.
+    const disposables = new CompositeDisposable();
+
+    // Argument completion used to hang off a raw `keyup` listener matching
+    // the `^(` keystroke, which silently did nothing on any keyboard layout
+    // where `(` is not shift-9. Watching the buffer instead is
+    // layout-independent. Upstream issues #416, #455, #465.
+    disposables.add(
+      editor.getBuffer().onDidChangeText(({ changes }) => {
+        if (!changes.some((change) => change.newText.includes('('))) return;
+        void this.completeArguments(
+          editor,
+          editor.getCursorBufferPosition(),
+          false
+        );
+      })
+    );
+
+    if (this.settings().showTooltips) {
       disposables.add(
-        editor.getBuffer().onDidChangeText(({ changes }) => {
-          if (!changes.some((change) => change.newText.includes('('))) return;
-          void this.completeArguments(
-            editor,
-            editor.getCursorBufferPosition(),
-            false
-          );
+        editor.onDidChangeCursorPosition((event) => {
+          void this.tooltips.handleCursorChange(editor, event);
         })
       );
+    }
 
-      if (this.settings().showTooltips) {
-        disposables.add(
-          editor.onDidChangeCursorPosition((event) => {
-            void this.tooltips.handleCursorChange(editor, event);
-          })
-        );
-      }
+    if (this.settings().semanticHighlight) {
+      const highlighter = new SemanticHighlighter(editor);
+      disposables.add({ dispose: () => highlighter.dispose() });
 
-      disposables.add(editor.onDidDestroy(() => this.detachFromEditor(editor)));
+      const refresh = (): void =>
+        void this.refreshHighlights(editor, highlighter);
+      // `onDidStopChanging` is already debounced by Pulsar, so Jedi is asked
+      // once the user pauses rather than on every keystroke.
+      disposables.add(editor.getBuffer().onDidStopChanging(refresh));
+      refresh();
+    }
 
-      this.editorDisposables.set(editor.id, disposables);
-      log.debug('Attached to editor', editor.id);
-    };
+    disposables.add(editor.onDidDestroy(() => this.detachFromEditor(editor)));
 
-    attach();
-    this.disposables.add(editor.onDidChangeGrammar(() => attach()));
+    this.editorDisposables.set(editor.id, disposables);
+    log.debug('Attached to editor', editor.id);
   }
 
   private detachFromEditor(editor: TextEditor): void {
@@ -518,6 +549,31 @@ export class PythonProvider {
       this.buildRequest('usages', editor, bufferPosition)
     );
     return response.results;
+  }
+
+  /** Semantic classification of every name in the buffer. */
+  async getHighlights(editor: TextEditor): Promise<Highlight[]> {
+    // A whole-file scan; the position is only there to key the request cache.
+    const request = this.buildRequest('highlights', editor, {
+      row: 0,
+      column: 0
+    });
+    const cached = this.daemon.cachedResponse<Highlight>(request.id);
+    const response =
+      cached ?? (await this.daemon.send<Highlight>(request));
+    return response.results;
+  }
+
+  /**
+   * Refresh one editor's semantic decorations, skipping files large enough that
+   * a per-pause Jedi scan would be felt.
+   */
+  private async refreshHighlights(
+    editor: TextEditor,
+    highlighter: SemanticHighlighter
+  ): Promise<void> {
+    if (editor.getLineCount() > SEMANTIC_HIGHLIGHT_LINE_CAP) return;
+    highlighter.update(await this.getHighlights(editor));
   }
 
   /**

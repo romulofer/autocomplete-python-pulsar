@@ -204,6 +204,7 @@ def test_build_script_puts_the_import_root_on_sys_path():
         ("usages", "get_references"),
         ("methods", "complete"),
         ("arguments", "get_signatures"),
+        ("highlights", "get_names"),
     ],
 )
 def test_handle_dispatches_each_lookup(lookup, expected_call):

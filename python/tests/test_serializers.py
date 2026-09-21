@@ -410,6 +410,48 @@ def test_tooltip_falls_back_when_the_docstring_raises():
     assert serializers.tooltip([definition])[0]["description"] == ""
 
 
+# --- highlights -----------------------------------------------------------
+
+
+def test_highlights_converts_rows_and_measures_the_name():
+    script = FakeScript(
+        names=[FakeName(name="merge", type="function", line=2, column=4)]
+    )
+    assert serializers.highlights(script) == [
+        {"type": "function", "line": 1, "column": 4, "length": 5}
+    ]
+
+
+def test_highlights_skips_keywords_and_nameless_entries():
+    script = FakeScript(
+        names=[
+            FakeName(name="for", type="keyword", line=1, column=0),
+            FakeName(name="", type="function", line=1, column=4),
+            FakeName(name="run", type="function", line=1, column=8),
+        ]
+    )
+    assert [entry["type"] for entry in serializers.highlights(script)] == [
+        "function"
+    ]
+
+
+def test_highlights_classifies_builtins_and_constants():
+    script = FakeScript(
+        names=[
+            FakeName(name="len", type="function", builtin=True, line=1, column=0),
+            FakeName(name="MAX", type="statement", line=2, column=0),
+        ]
+    )
+    assert [entry["type"] for entry in serializers.highlights(script)] == [
+        "builtin",
+        "constant",
+    ]
+
+
+def test_highlights_is_empty_when_jedi_raises():
+    assert serializers.highlights(ExplodingScript()) == []
+
+
 def test_usages_keeps_one_based_lines():
     found = serializers.usages(
         [

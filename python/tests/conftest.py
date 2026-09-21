@@ -133,11 +133,13 @@ class FakeScript:
         signatures: list[FakeSignature] | None = None,
         goto: list[FakeName] | None = None,
         references: list[FakeName] | None = None,
+        names: list[FakeName] | None = None,
     ) -> None:
         self._completions = completions or []
         self._signatures = signatures or []
         self._goto = goto or []
         self._references = references or []
+        self._names = names or []
         self.calls: list[tuple[str, int, int]] = []
 
     def complete(self, line: int, column: int) -> list[FakeName]:
@@ -156,6 +158,10 @@ class FakeScript:
         self.calls.append(("get_references", line, column))
         return self._references
 
+    def get_names(self, **kwargs: Any) -> list[FakeName]:
+        self.calls.append(("get_names", -1, -1))
+        return self._names
+
 
 class ExplodingScript(FakeScript):
     """Every lookup raises, to prove the serializers degrade to empty results."""
@@ -164,6 +170,9 @@ class ExplodingScript(FakeScript):
         raise KeyError("jedi blew up")
 
     def get_signatures(self, line: int, column: int) -> list[FakeSignature]:
+        raise KeyError("jedi blew up")
+
+    def get_names(self, **kwargs: Any) -> list[FakeName]:
         raise KeyError("jedi blew up")
 
 
