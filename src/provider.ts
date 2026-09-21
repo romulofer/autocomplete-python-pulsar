@@ -298,6 +298,10 @@ export class PythonProvider {
           this.adjustOutputFontSize(-1),
         'autocomplete-python-pulsar:reset-output-font-size': () =>
           atom.config.set('autocomplete-python-pulsar.outputFontSize', 0),
+        'autocomplete-python-pulsar:toggle-semantic-highlighting': () => {
+          const key = 'autocomplete-python-pulsar.semanticHighlight';
+          atom.config.set(key, !atom.config.get(key));
+        },
         'autocomplete-python-pulsar:select-interpreter': () =>
           void this.selectInterpreter(),
         'autocomplete-python-pulsar:show-environment': () => this.showEnvironment()

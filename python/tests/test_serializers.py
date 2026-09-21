@@ -448,6 +448,21 @@ def test_highlights_classifies_builtins_and_constants():
     ]
 
 
+def test_highlights_leaves_plain_identifiers_to_the_grammar():
+    # Statements and unresolved references classify as `variable`; the daemon
+    # drops them so the grammar keeps coloring them rather than being flattened.
+    script = FakeScript(
+        names=[
+            FakeName(name="total", type="statement", line=1, column=0),
+            FakeName(name="obj", type="instance", line=2, column=0),
+            FakeName(name="run", type="function", line=3, column=0),
+        ]
+    )
+    assert [entry["type"] for entry in serializers.highlights(script)] == [
+        "function"
+    ]
+
+
 def test_highlights_is_empty_when_jedi_raises():
     assert serializers.highlights(ExplodingScript()) == []
 

@@ -83,6 +83,7 @@ Full details in [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 | `autocomplete-python-pulsar:run-file` | `F5`, `Ctrl+Alt+R` / `Alt+Cmd+R` |
 | `autocomplete-python-pulsar:stop` | `Shift+F5` |
 | `autocomplete-python-pulsar:toggle-output` | none |
+| `autocomplete-python-pulsar:toggle-semantic-highlighting` | none |
 | `autocomplete-python-pulsar:go-to-definition` | `Ctrl+Alt+G` / `Alt+Cmd+G` |
 | `autocomplete-python-pulsar:show-usages` | none |
 | `autocomplete-python-pulsar:rename` | none |

@@ -32,6 +32,7 @@
               { 'label': 'Reset (follow editor)', 'command': 'autocomplete-python-pulsar:reset-output-font-size' }
             ]
           }
+          { 'label': 'Toggle Semantic Highlighting', 'command': 'autocomplete-python-pulsar:toggle-semantic-highlighting' }
           { 'type': 'separator' }
           { 'label': 'Select Interpreter…', 'command': 'autocomplete-python-pulsar:select-interpreter' }
           { 'label': 'Show Environment', 'command': 'autocomplete-python-pulsar:show-environment' }

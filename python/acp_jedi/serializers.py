@@ -270,9 +270,15 @@ def highlights(script: Any) -> list[dict[str, Any]]:
         text = getattr(name, "name", "") or ""
         if not text or getattr(name, "type", None) == "keyword":
             continue
+        highlight = names.highlight_type(name)
+        # `variable` is the catch-all for statements, instances and references
+        # Jedi did not resolve to anything specific. Leaving them to the grammar
+        # keeps its own coloring instead of flattening every name to one color.
+        if highlight == "variable":
+            continue
         results.append(
             {
-                "type": names.highlight_type(name),
+                "type": highlight,
                 "line": name.line - 1,
                 "column": name.column,
                 "length": len(text),

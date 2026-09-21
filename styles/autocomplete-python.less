@@ -67,11 +67,9 @@ atom-text-editor {
     color: #98c379; // imports and module references
   }
 
-  // The fallback class: statements, instances, and references Jedi did not
-  // resolve to anything more specific.
-  .acp-hl-variable {
-    color: #abb2bf;
-  }
+  // No rule for plain identifiers: the daemon does not emit a `variable`
+  // highlight, so statements, instances and unresolved references keep the
+  // grammar's own color instead of being flattened to one.
 }
 
 .autocomplete-python-status {

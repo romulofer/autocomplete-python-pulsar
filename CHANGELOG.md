@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.5.1
+
+### Changed
+
+- **Semantic highlighting only accents what Jedi resolves specifically** -
+  functions, classes, parameters, builtins, constants and modules. Plain and
+  unresolved identifiers are left to the grammar instead of being recolored to a
+  single flat color, so the result adds information rather than washing the
+  buffer out.
+
+### Added
+
+- **Toggle Semantic Highlighting** command and menu item
+  (`autocomplete-python-pulsar:toggle-semantic-highlighting`, under **Packages →
+  Autocomplete Python**), flipping the setting without opening the settings pane.
+
 ## 2.5.0
 
 ### Added
