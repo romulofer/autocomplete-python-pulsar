@@ -17,6 +17,13 @@ class SemanticHighlighter {
     layers = new Map();
     decorations = [];
     disposed = false;
+    /**
+     * The last applied spans, serialized. Editing a string or comment changes the
+     * buffer without changing any identifier's classification, so the daemon keeps
+     * returning the same spans; this skips clearing and re-marking every layer
+     * when nothing an update would draw has moved.
+     */
+    lastSignature = null;
     constructor(editor) {
         this.editor = editor;
     }
@@ -24,6 +31,10 @@ class SemanticHighlighter {
     update(highlights) {
         if (this.disposed)
             return;
+        const signature = JSON.stringify(highlights);
+        if (signature === this.lastSignature)
+            return;
+        this.lastSignature = signature;
         for (const layer of this.layers.values())
             layer.clear();
         for (const { type, line, column, length } of highlights) {

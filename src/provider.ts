@@ -7,6 +7,7 @@ import {
   applySubstitutions,
   compileTriggerRegex,
   resolveSettings,
+  DEFAULT_HIGHLIGHT_COLORS,
   type PythonSettings,
   type RawSettings
 } from './config';
@@ -29,6 +30,7 @@ import type {
 } from './daemon/protocol';
 import { parseSelectorList, scopesMatchSelectors } from './editor/scope-helpers';
 import { SemanticHighlighter } from './editor/semantic-highlight';
+import { buildHighlightStyle } from './editor/highlight-style';
 import {
   filterSuggestions,
   isArgumentCompletionSite,
@@ -133,6 +135,8 @@ export class PythonProvider {
   private snippetsManager: SnippetsManager | null = null;
   private triggerCompletionRegex = compileTriggerRegex('').regex;
   private activated = false;
+  /** The injected stylesheet holding the user's highlight color overrides. */
+  private highlightStyle: { dispose(): void } | null = null;
 
   private definitionsView: SelectListPanel<Definition> | null = null;
   private usagesView: SelectListPanel<Usage> | null = null;
@@ -172,6 +176,8 @@ export class PythonProvider {
     this.suggestionPriority = this.settings().suggestionPriority;
     this.registerCommands();
     this.observeConfig();
+    this.applyHighlightColors();
+    this.disposables.add({ dispose: () => this.highlightStyle?.dispose() });
 
     this.disposables.add(
       atom.workspace.observeTextEditors((editor) => this.observeEditor(editor))
@@ -330,6 +336,18 @@ export class PythonProvider {
           this.attachToEditor(editor);
         }
       }),
+      // Which kinds are enabled changes what a repaint marks; re-attach so every
+      // open editor repaints through the new filter.
+      atom.config.onDidChange('autocomplete-python-pulsar.semanticHighlightTypes', () => {
+        for (const editor of atom.workspace.getTextEditors()) {
+          this.attachToEditor(editor);
+        }
+      }),
+      // Colors are pure CSS, so just rebuild the override stylesheet - no repaint
+      // and no daemon round trip needed.
+      atom.config.onDidChange('autocomplete-python-pulsar.semanticHighlightColors', () =>
+        this.applyHighlightColors()
+      ),
       // Anything that changes which interpreter or which packages Jedi sees
       // invalidates both the interpreter lookup and every cached response.
       atom.config.onDidChange('autocomplete-python-pulsar.pythonPaths', () =>
@@ -348,6 +366,33 @@ export class PythonProvider {
   private reloadDaemon(): void {
     this.daemon.reload();
     this.refreshStatusView();
+  }
+
+  /**
+   * (Re)inject the stylesheet that carries the user's highlight color overrides.
+   * Rebuilt whenever the colors change; empty when nothing was customized, so
+   * the theme-aware defaults in the package stylesheet keep applying.
+   */
+  private applyHighlightColors(): void {
+    this.highlightStyle?.dispose();
+    this.highlightStyle = null;
+
+    const css = buildHighlightStyle(
+      this.settings().semanticHighlightColors,
+      DEFAULT_HIGHLIGHT_COLORS
+    );
+    if (!css) return;
+
+    // `addStyleSheet` is missing from the bundled atom typings.
+    const styles = atom.styles as unknown as {
+      addStyleSheet(
+        source: string,
+        params?: { sourcePath?: string; priority?: number; context?: string }
+      ): { dispose(): void };
+    };
+    this.highlightStyle = styles.addStyleSheet(css, {
+      sourcePath: 'autocomplete-python-pulsar:highlight-colors'
+    });
   }
 
   /**
@@ -409,12 +454,17 @@ export class PythonProvider {
       const highlighter = new SemanticHighlighter(editor);
       disposables.add({ dispose: () => highlighter.dispose() });
 
-      const refresh = (): void =>
-        void this.refreshHighlights(editor, highlighter);
       // `onDidStopChanging` is already debounced by Pulsar, so Jedi is asked
-      // once the user pauses rather than on every keystroke.
-      disposables.add(editor.getBuffer().onDidStopChanging(refresh));
-      refresh();
+      // once the user pauses rather than on every keystroke. Live refreshes are
+      // capped by file size; the initial paint is not, so even a large file gets
+      // colored once on open - it just stops tracking edits past the cap.
+      disposables.add(
+        editor.getBuffer().onDidStopChanging(() => {
+          if (editor.getLineCount() > SEMANTIC_HIGHLIGHT_LINE_CAP) return;
+          void this.refreshHighlights(editor, highlighter);
+        })
+      );
+      void this.refreshHighlights(editor, highlighter);
     }
 
     disposables.add(editor.onDidDestroy(() => this.detachFromEditor(editor)));
@@ -569,15 +619,17 @@ export class PythonProvider {
   }
 
   /**
-   * Refresh one editor's semantic decorations, skipping files large enough that
-   * a per-pause Jedi scan would be felt.
+   * Repaint one editor's semantic decorations from a fresh Jedi scan. Callers
+   * decide when to skip: the live edit handler caps this by file size, while the
+   * initial paint runs unconditionally.
    */
   private async refreshHighlights(
     editor: TextEditor,
     highlighter: SemanticHighlighter
   ): Promise<void> {
-    if (editor.getLineCount() > SEMANTIC_HIGHLIGHT_LINE_CAP) return;
-    highlighter.update(await this.getHighlights(editor));
+    const enabled = new Set<string>(this.settings().semanticHighlightTypes);
+    const highlights = await this.getHighlights(editor);
+    highlighter.update(highlights.filter((span) => enabled.has(span.type)));
   }
 
   /**

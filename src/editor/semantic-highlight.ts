@@ -17,12 +17,23 @@ export class SemanticHighlighter {
   private readonly layers = new Map<string, DisplayMarkerLayer>();
   private readonly decorations: LayerDecoration[] = [];
   private disposed = false;
+  /**
+   * The last applied spans, serialized. Editing a string or comment changes the
+   * buffer without changing any identifier's classification, so the daemon keeps
+   * returning the same spans; this skips clearing and re-marking every layer
+   * when nothing an update would draw has moved.
+   */
+  private lastSignature: string | null = null;
 
   constructor(private readonly editor: TextEditor) {}
 
   /** Replace all decorations with the given spans. */
   update(highlights: readonly Highlight[]): void {
     if (this.disposed) return;
+
+    const signature = JSON.stringify(highlights);
+    if (signature === this.lastSignature) return;
+    this.lastSignature = signature;
 
     for (const layer of this.layers.values()) layer.clear();
 

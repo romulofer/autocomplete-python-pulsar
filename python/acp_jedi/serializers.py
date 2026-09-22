@@ -250,13 +250,17 @@ def tooltip(found: Iterable[Any]) -> list[dict[str, Any]]:
     return []
 
 
-def highlights(script: Any) -> list[dict[str, Any]]:
+def highlights(script: Any, source: str = "") -> list[dict[str, Any]]:
     """Every name in the module, classified for semantic highlighting.
 
     Rows are converted to zero-based, matching ``markBufferRange``. Keywords are
     skipped: the editor's grammar already colors them, and this layer only
     refines identifiers (function vs class vs parameter vs builtin, and so on).
     Each span is the length of the bare name and never crosses a line.
+
+    ``source`` is the buffer text, used only to spot decorator heads - a name
+    Jedi reports by type but not by the ``@`` that precedes it. Without it the
+    classification is unchanged.
     """
     try:
         found = script.get_names(
@@ -265,21 +269,32 @@ def highlights(script: Any) -> list[dict[str, Any]]:
     except Exception:
         return []
 
+    lines = source.split("\n") if source else []
+
     results: list[dict[str, Any]] = []
     for name in found:
         text = getattr(name, "name", "") or ""
         if not text or getattr(name, "type", None) == "keyword":
             continue
-        highlight = names.highlight_type(name)
-        # `variable` is the catch-all for statements, instances and references
-        # Jedi did not resolve to anything specific. Leaving them to the grammar
-        # keeps its own coloring instead of flattening every name to one color.
-        if highlight == "variable":
-            continue
+        line = name.line - 1
+        span = names.decorator_span(lines[line]) if 0 <= line < len(lines) else None
+        if span is not None and span[0] <= name.column < span[1]:
+            # A decorator wins over whatever the name resolves to, so `@property`
+            # and every dotted part of `@app.route` read the same, while the call
+            # arguments past the paren keep their own class.
+            highlight = "decorator"
+        else:
+            highlight = names.highlight_type(name)
+            # `variable` is the catch-all for statements, instances and
+            # references Jedi did not resolve to anything specific. Leaving them
+            # to the grammar keeps its own coloring instead of flattening every
+            # name to one color.
+            if highlight == "variable":
+                continue
         results.append(
             {
                 "type": highlight,
-                "line": name.line - 1,
+                "line": line,
                 "column": name.column,
                 "length": len(text),
             }

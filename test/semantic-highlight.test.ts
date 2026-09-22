@@ -110,6 +110,20 @@ describe('SemanticHighlighter', () => {
     ]);
   });
 
+  it('skips re-marking when the spans are unchanged', () => {
+    const { editor, layers } = fakeEditor();
+    const highlighter = new SemanticHighlighter(editor as never);
+
+    highlighter.update([hl({ type: 'function' })]);
+    // Same spans again: an edit in a string or comment leaves the daemon's
+    // classification untouched, so nothing should be cleared or re-marked.
+    highlighter.update([hl({ type: 'function' })]);
+
+    expect(layers).toHaveLength(1);
+    expect(layers[0].cleared).toBe(0);
+    expect(layers[0].ranges).toHaveLength(1);
+  });
+
   it('skips zero-length spans', () => {
     const { editor, layers } = fakeEditor();
     const highlighter = new SemanticHighlighter(editor as never);

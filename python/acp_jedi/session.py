@@ -225,5 +225,8 @@ class JediSession:
         config: RequestConfig,
         request: dict[str, Any],
     ) -> dict[str, Any]:
-        # Whole-file scan; the cursor position is irrelevant.
-        return protocol.response(identifier, serializers.highlights(script))
+        # Whole-file scan; the cursor position is irrelevant. Source is passed
+        # through so decorator heads can be told apart from ordinary names.
+        return protocol.response(
+            identifier, serializers.highlights(script, request["source"])
+        )

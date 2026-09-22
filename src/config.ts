@@ -16,6 +16,40 @@ export type SnippetMode = 'none' | 'all' | 'required';
 /** The default trigger: a word character, a dot, a space or an open paren. */
 export const DEFAULT_TRIGGER_REGEX = '([. (]|[a-zA-Z_][a-zA-Z0-9_]*)';
 
+/** Every semantic highlight class the daemon can emit, in palette order. */
+export const SEMANTIC_HIGHLIGHT_TYPES = [
+  'function',
+  'property',
+  'magic',
+  'decorator',
+  'class',
+  'param',
+  'self',
+  'builtin',
+  'constant',
+  'module'
+] as const;
+
+export type HighlightType = (typeof SEMANTIC_HIGHLIGHT_TYPES)[number];
+
+/**
+ * The base hue for each class, matching the defaults in the stylesheet. A user
+ * color equal to one of these means "unchanged", so the theme-aware stylesheet
+ * keeps handling it; anything else is injected verbatim.
+ */
+export const DEFAULT_HIGHLIGHT_COLORS: Record<HighlightType, string> = {
+  function: '#61afef',
+  property: '#d16d9e',
+  magic: '#61afef',
+  decorator: '#e5c07b',
+  class: '#e5c07b',
+  param: '#d19a66',
+  self: '#e06c75',
+  builtin: '#56b6c2',
+  constant: '#c678dd',
+  module: '#98c379'
+};
+
 export interface PythonSettings {
   selectedInterpreter: string;
   /** Already split on `;`, trimmed, and stripped of empties. */
@@ -28,6 +62,10 @@ export interface PythonSettings {
   triggerCompletionRegex: string;
   showTooltips: boolean;
   semanticHighlight: boolean;
+  /** The subset of classes the user left enabled; others are not marked. */
+  semanticHighlightTypes: HighlightType[];
+  /** Per-class color, defaults filled in; equal-to-default means "unchanged". */
+  semanticHighlightColors: Record<HighlightType, string>;
   suggestionPriority: number;
   /** Minutes; `0` keeps the daemon alive for the whole session. */
   daemonIdleTimeout: number;
@@ -61,6 +99,46 @@ function asBoolean(value: unknown, fallback: boolean): boolean {
 function asNumber(value: unknown, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
+ * A configured color as a string. Atom hands back a `Color` object for `color`
+ * settings and a plain string when read from JSON; both collapse to a hex here.
+ */
+function asColor(value: unknown, fallback: string): string {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (
+    value &&
+    typeof value === 'object' &&
+    typeof (value as { toHexString?: unknown }).toHexString === 'function'
+  ) {
+    return (value as { toHexString: () => string }).toHexString();
+  }
+  return fallback;
+}
+
+/** The enabled highlight classes, all of them when the setting is absent. */
+export function parseHighlightTypes(value: unknown): HighlightType[] {
+  if (!Array.isArray(value)) return [...SEMANTIC_HIGHLIGHT_TYPES];
+  const chosen = new Set(value.map(String));
+  // Filter against the known list so order stays fixed and typos are dropped;
+  // an explicit empty list is honored, leaving every class to the grammar.
+  return SEMANTIC_HIGHLIGHT_TYPES.filter((type) => chosen.has(type));
+}
+
+/** Every class mapped to its color, user overrides layered onto the defaults. */
+export function parseHighlightColors(
+  value: unknown
+): Record<HighlightType, string> {
+  const raw = (value && typeof value === 'object' ? value : {}) as Record<
+    string,
+    unknown
+  >;
+  const colors = {} as Record<HighlightType, string>;
+  for (const type of SEMANTIC_HIGHLIGHT_TYPES) {
+    colors[type] = asColor(raw[type], DEFAULT_HIGHLIGHT_COLORS[type]);
+  }
+  return colors;
 }
 
 /** Split a semicolon-separated setting into clean entries. */
@@ -123,6 +201,8 @@ export function resolveSettings(raw: RawSettings = {}): PythonSettings {
     ),
     showTooltips: asBoolean(raw.showTooltips, false),
     semanticHighlight: asBoolean(raw.semanticHighlight, false),
+    semanticHighlightTypes: parseHighlightTypes(raw.semanticHighlightTypes),
+    semanticHighlightColors: parseHighlightColors(raw.semanticHighlightColors),
     suggestionPriority: asNumber(raw.suggestionPriority, 3),
     daemonIdleTimeout: Math.max(0, asNumber(raw.daemonIdleTimeout, 10)),
     outputProviderErrors: asBoolean(raw.outputProviderErrors, false),
@@ -239,6 +319,34 @@ export const configSchema = {
     title: 'Semantic Highlighting',
     description:
       'Recolor identifiers by what Jedi knows them to be - function, class, parameter, builtin, constant, module - layered on top of the grammar. Updates shortly after you stop typing. Needs a working interpreter, same as completions.'
+  },
+  semanticHighlightTypes: {
+    type: 'array',
+    default: [...SEMANTIC_HIGHLIGHT_TYPES],
+    order: 20,
+    title: 'Semantic Highlighting: Enabled Kinds',
+    description:
+      'Which name kinds get recolored. Remove a kind to leave it to the grammar. Applies once you stop typing.',
+    items: { type: 'string', enum: [...SEMANTIC_HIGHLIGHT_TYPES] }
+  },
+  semanticHighlightColors: {
+    type: 'object',
+    order: 21,
+    title: 'Semantic Highlighting: Colors',
+    description:
+      'Override the color of a kind. Left at the default, a kind adapts to light themes automatically; a custom color is used exactly as set.',
+    properties: {
+      function: { type: 'color', default: '#61afef', order: 1, title: 'Function / Property' },
+      property: { type: 'color', default: '#d16d9e', order: 2, title: 'Property' },
+      magic: { type: 'color', default: '#61afef', order: 3, title: 'Dunder Method' },
+      decorator: { type: 'color', default: '#e5c07b', order: 4, title: 'Decorator' },
+      class: { type: 'color', default: '#e5c07b', order: 5, title: 'Class' },
+      param: { type: 'color', default: '#d19a66', order: 6, title: 'Parameter' },
+      self: { type: 'color', default: '#e06c75', order: 7, title: 'self / cls' },
+      builtin: { type: 'color', default: '#56b6c2', order: 8, title: 'Builtin' },
+      constant: { type: 'color', default: '#c678dd', order: 9, title: 'Constant' },
+      module: { type: 'color', default: '#98c379', order: 10, title: 'Module' }
+    }
   },
   suggestionPriority: {
     type: 'integer',

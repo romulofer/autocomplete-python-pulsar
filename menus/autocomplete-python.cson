@@ -10,6 +10,8 @@
         { 'label': 'Rename…', 'command': 'autocomplete-python-pulsar:rename' }
         { 'label': 'Override Method…', 'command': 'autocomplete-python-pulsar:override-method' }
         { 'label': 'Complete Arguments', 'command': 'autocomplete-python-pulsar:complete-arguments' }
+        { 'type': 'separator' }
+        { 'label': 'Toggle Semantic Highlighting', 'command': 'autocomplete-python-pulsar:toggle-semantic-highlighting' }
       ]
     }
   ]

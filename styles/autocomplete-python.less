@@ -1,4 +1,5 @@
 @import "ui-variables";
+@import "syntax-variables";
 
 @row-line-height: 2em;
 @item-side-padding: 0.6em;
@@ -38,33 +39,62 @@ autocomplete-python-suggestion {
 // Semantic highlighting: `type: 'text'` decorations wrap the name's glyphs in a
 // span carrying these classes, layered over the grammar. Only identifiers are
 // recolored - keywords, strings and numbers keep the theme's grammar colors.
-// The palette is deliberate but plain; override any of these in your own
-// stylesheet to match a theme.
+//
+// The palette is a curated One-Dark set of hues, kept distinct with a little
+// italic where hues repeat. `.acp-hl-color` keeps the hue but darkens it on a
+// light background - read from the guaranteed `@syntax-background-color`, not
+// from any theme-specific syntax color - so the same rules stay legible under a
+// light theme. Override any class in your own stylesheet to retune.
+.acp-hl-color(@hue) {
+  color: @hue;
+}
+.acp-hl-color(@hue) when (luma(@syntax-background-color) > 50%) {
+  color: darken(@hue, 22%);
+}
+
 atom-text-editor {
-  .acp-hl-function,
+  .acp-hl-function {
+    .acp-hl-color(#61afef); // definitions and calls
+  }
+
   .acp-hl-property {
-    color: #61afef; // definitions and calls
+    .acp-hl-color(#d16d9e); // attribute and property access
+  }
+
+  .acp-hl-magic {
+    .acp-hl-color(#61afef); // dunder methods: __init__, __repr__, ...
+    font-style: italic;
   }
 
   .acp-hl-class {
-    color: #e5c07b; // types
+    .acp-hl-color(#e5c07b); // types
+  }
+
+  .acp-hl-decorator {
+    .acp-hl-color(#e5c07b); // @decorator heads; italic sets them apart from classes
+    font-style: italic;
   }
 
   .acp-hl-param {
-    color: #d19a66; // function parameters
+    .acp-hl-color(#d19a66); // function parameters
+    font-style: italic;
+  }
+
+  .acp-hl-self {
+    .acp-hl-color(#e06c75); // the implicit self / cls parameter
     font-style: italic;
   }
 
   .acp-hl-builtin {
-    color: #56b6c2; // resolved builtins: len, range, print, ...
+    .acp-hl-color(#56b6c2); // resolved builtins: len, range, print, ...
   }
 
   .acp-hl-constant {
-    color: #d19a66; // ALL_CAPS names
+    .acp-hl-color(#c678dd); // ALL_CAPS names; kept apart from the param orange
   }
 
   .acp-hl-module {
-    color: #98c379; // imports and module references
+    .acp-hl-color(#98c379); // imports and module references
   }
 
   // No rule for plain identifiers: the daemon does not emit a `variable`

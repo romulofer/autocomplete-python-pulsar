@@ -97,6 +97,87 @@ def test_highlight_type_detects_builtins_and_constants():
     assert names.highlight_type(FakeName(name="MAX", type="statement")) == "constant"
 
 
+def test_highlight_type_gives_self_and_cls_their_own_class():
+    method = FakeName(type="function")
+    assert (
+        names.highlight_type(FakeName(name="self", type="param", parent_name=method))
+        == "self"
+    )
+    assert (
+        names.highlight_type(FakeName(name="cls", type="param", parent_name=method))
+        == "self"
+    )
+    # An ordinary parameter keeps the plain param class.
+    assert names.highlight_type(FakeName(name="value", type="param")) == "param"
+
+
+def test_highlight_type_colors_self_references_in_the_body():
+    # Jedi reports `self` used inside a method as an instance; it is colored to
+    # match its param binding, while other instances stay plain variables.
+    method = FakeName(type="function")
+    assert (
+        names.highlight_type(FakeName(name="self", type="instance", parent_name=method))
+        == "self"
+    )
+    assert names.highlight_type(FakeName(name="obj", type="instance")) == "variable"
+
+
+def test_highlight_type_leaves_a_module_level_self_alone():
+    # `self` outside a method is an ordinary name; only a method binds the class.
+    module = FakeName(type="module")
+    assert (
+        names.highlight_type(FakeName(name="self", type="instance", parent_name=module))
+        == "variable"
+    )
+    assert (
+        names.highlight_type(FakeName(name="self", type="param", parent_name=module))
+        == "param"
+    )
+
+
+def test_highlight_type_marks_dunder_methods_as_magic():
+    assert names.highlight_type(FakeName(name="__init__", type="function")) == "magic"
+    assert names.highlight_type(FakeName(name="__doc__", type="property")) == "magic"
+    # A plain method keeps the function class; a builtin dunder stays a builtin.
+    assert names.highlight_type(FakeName(name="run", type="function")) == "function"
+    assert (
+        names.highlight_type(FakeName(name="__len__", type="function", builtin=True))
+        == "builtin"
+    )
+
+
+def test_is_dunder_needs_more_than_the_underscores():
+    assert names.is_dunder("__init__")
+    assert not names.is_dunder("____")
+    assert not names.is_dunder("_private")
+    assert not names.is_dunder("plain")
+
+
+def test_decorator_head_column_points_at_the_decorated_name():
+    assert names.decorator_head_column("@deco") == 1
+    assert names.decorator_head_column("    @deco") == 5
+    # Whitespace after the @ is legal; the column follows it.
+    assert names.decorator_head_column("@ deco") == 2
+    # For a dotted decorator, only the head is placed.
+    assert names.decorator_head_column("@app.route") == 1
+
+
+def test_decorator_head_column_ignores_the_matrix_multiply_operator():
+    # A binary `@` always has an operand before it, so the line never starts
+    # with one - this is what keeps `a @ b` from being read as a decorator.
+    assert names.decorator_head_column("a @ b") is None
+    assert names.decorator_head_column("def f():") is None
+    assert names.decorator_head_column("") is None
+
+
+def test_decorator_span_covers_the_dotted_name_up_to_the_call():
+    # A bare decorator runs to the end of the line.
+    assert names.decorator_span("@app.route") == (1, 10)
+    # With a call, the span stops at the paren so arguments are left out.
+    assert names.decorator_span("@app.route('/')") == (1, 10)
+    assert names.decorator_span("a @ b") is None
+
+
 def test_highlight_type_survives_an_accessor_that_raises():
     # in_builtin_module() raises; the builtin check swallows it and the type
     # still resolves.

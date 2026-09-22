@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.6.0
+
+### Added
+
+- **Two more highlighted name kinds.** `self`/`cls` get their own class - at the
+  parameter and everywhere they are used in the method body - and dunder methods
+  (`__init__`, `__repr__`, …) are marked as magic. Decorators are colored as a
+  whole, from the `@` through every dotted part of `@app.route`, while the call
+  arguments keep their own color.
+- **Property access** is now colored apart from function calls.
+- **Per-kind control.** _Semantic Highlighting: Enabled Kinds_ lets you drop any
+  kind back to the grammar, and _Semantic Highlighting: Colors_ overrides the
+  color of each kind from the settings pane.
+- **Toggle Semantic Highlighting** is now in the editor's right-click **Python**
+  menu as well as the Packages menu.
+
+### Changed
+
+- **The palette adapts to light themes.** Colors keep their hue but darken over a
+  light background, read from the theme's own background, so the defaults stay
+  legible without a custom stylesheet. A color you set yourself is used as-is.
+- **Large files are colored once on open** instead of not at all; only the live
+  per-keystroke refresh is still capped by file size.
+- **Unchanged buffers are not repainted.** Editing a string or comment no longer
+  re-marks every decoration, since the classification has not moved.
+
+### Fixed
+
+- A module-level variable named `self` is no longer miscolored as the instance;
+  the `self` class is limited to names inside a method.
+- Constants are no longer the same color as parameters.
+
 ## 2.5.1
 
 ### Changed

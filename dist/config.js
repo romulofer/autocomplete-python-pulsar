@@ -40,7 +40,9 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.configSchema = exports.DEFAULT_TRIGGER_REGEX = void 0;
+exports.configSchema = exports.DEFAULT_HIGHLIGHT_COLORS = exports.SEMANTIC_HIGHLIGHT_TYPES = exports.DEFAULT_TRIGGER_REGEX = void 0;
+exports.parseHighlightTypes = parseHighlightTypes;
+exports.parseHighlightColors = parseHighlightColors;
 exports.splitPathList = splitPathList;
 exports.applySubstitutions = applySubstitutions;
 exports.resolveSettings = resolveSettings;
@@ -48,6 +50,36 @@ exports.compileTriggerRegex = compileTriggerRegex;
 const path = __importStar(require("path"));
 /** The default trigger: a word character, a dot, a space or an open paren. */
 exports.DEFAULT_TRIGGER_REGEX = '([. (]|[a-zA-Z_][a-zA-Z0-9_]*)';
+/** Every semantic highlight class the daemon can emit, in palette order. */
+exports.SEMANTIC_HIGHLIGHT_TYPES = [
+    'function',
+    'property',
+    'magic',
+    'decorator',
+    'class',
+    'param',
+    'self',
+    'builtin',
+    'constant',
+    'module'
+];
+/**
+ * The base hue for each class, matching the defaults in the stylesheet. A user
+ * color equal to one of these means "unchanged", so the theme-aware stylesheet
+ * keeps handling it; anything else is injected verbatim.
+ */
+exports.DEFAULT_HIGHLIGHT_COLORS = {
+    function: '#61afef',
+    property: '#d16d9e',
+    magic: '#61afef',
+    decorator: '#e5c07b',
+    class: '#e5c07b',
+    param: '#d19a66',
+    self: '#e06c75',
+    builtin: '#56b6c2',
+    constant: '#c678dd',
+    module: '#98c379'
+};
 const SNIPPET_MODES = ['none', 'all', 'required'];
 const WORKING_DIRECTORY_MODES = ['file', 'project'];
 function asString(value, fallback = '') {
@@ -59,6 +91,38 @@ function asBoolean(value, fallback) {
 function asNumber(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+}
+/**
+ * A configured color as a string. Atom hands back a `Color` object for `color`
+ * settings and a plain string when read from JSON; both collapse to a hex here.
+ */
+function asColor(value, fallback) {
+    if (typeof value === 'string' && value.trim())
+        return value.trim();
+    if (value &&
+        typeof value === 'object' &&
+        typeof value.toHexString === 'function') {
+        return value.toHexString();
+    }
+    return fallback;
+}
+/** The enabled highlight classes, all of them when the setting is absent. */
+function parseHighlightTypes(value) {
+    if (!Array.isArray(value))
+        return [...exports.SEMANTIC_HIGHLIGHT_TYPES];
+    const chosen = new Set(value.map(String));
+    // Filter against the known list so order stays fixed and typos are dropped;
+    // an explicit empty list is honored, leaving every class to the grammar.
+    return exports.SEMANTIC_HIGHLIGHT_TYPES.filter((type) => chosen.has(type));
+}
+/** Every class mapped to its color, user overrides layered onto the defaults. */
+function parseHighlightColors(value) {
+    const raw = (value && typeof value === 'object' ? value : {});
+    const colors = {};
+    for (const type of exports.SEMANTIC_HIGHLIGHT_TYPES) {
+        colors[type] = asColor(raw[type], exports.DEFAULT_HIGHLIGHT_COLORS[type]);
+    }
+    return colors;
 }
 /** Split a semicolon-separated setting into clean entries. */
 function splitPathList(value) {
@@ -111,6 +175,8 @@ function resolveSettings(raw = {}) {
         triggerCompletionRegex: asString(raw.triggerCompletionRegex, exports.DEFAULT_TRIGGER_REGEX),
         showTooltips: asBoolean(raw.showTooltips, false),
         semanticHighlight: asBoolean(raw.semanticHighlight, false),
+        semanticHighlightTypes: parseHighlightTypes(raw.semanticHighlightTypes),
+        semanticHighlightColors: parseHighlightColors(raw.semanticHighlightColors),
         suggestionPriority: asNumber(raw.suggestionPriority, 3),
         daemonIdleTimeout: Math.max(0, asNumber(raw.daemonIdleTimeout, 10)),
         outputProviderErrors: asBoolean(raw.outputProviderErrors, false),
@@ -213,6 +279,32 @@ exports.configSchema = {
         order: 19,
         title: 'Semantic Highlighting',
         description: 'Recolor identifiers by what Jedi knows them to be - function, class, parameter, builtin, constant, module - layered on top of the grammar. Updates shortly after you stop typing. Needs a working interpreter, same as completions.'
+    },
+    semanticHighlightTypes: {
+        type: 'array',
+        default: [...exports.SEMANTIC_HIGHLIGHT_TYPES],
+        order: 20,
+        title: 'Semantic Highlighting: Enabled Kinds',
+        description: 'Which name kinds get recolored. Remove a kind to leave it to the grammar. Applies once you stop typing.',
+        items: { type: 'string', enum: [...exports.SEMANTIC_HIGHLIGHT_TYPES] }
+    },
+    semanticHighlightColors: {
+        type: 'object',
+        order: 21,
+        title: 'Semantic Highlighting: Colors',
+        description: 'Override the color of a kind. Left at the default, a kind adapts to light themes automatically; a custom color is used exactly as set.',
+        properties: {
+            function: { type: 'color', default: '#61afef', order: 1, title: 'Function / Property' },
+            property: { type: 'color', default: '#d16d9e', order: 2, title: 'Property' },
+            magic: { type: 'color', default: '#61afef', order: 3, title: 'Dunder Method' },
+            decorator: { type: 'color', default: '#e5c07b', order: 4, title: 'Decorator' },
+            class: { type: 'color', default: '#e5c07b', order: 5, title: 'Class' },
+            param: { type: 'color', default: '#d19a66', order: 6, title: 'Parameter' },
+            self: { type: 'color', default: '#e06c75', order: 7, title: 'self / cls' },
+            builtin: { type: 'color', default: '#56b6c2', order: 8, title: 'Builtin' },
+            constant: { type: 'color', default: '#c678dd', order: 9, title: 'Constant' },
+            module: { type: 'color', default: '#98c379', order: 10, title: 'Module' }
+        }
     },
     suggestionPriority: {
         type: 'integer',

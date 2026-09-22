@@ -3,8 +3,12 @@ import {
   applySubstitutions,
   compileTriggerRegex,
   configSchema,
+  DEFAULT_HIGHLIGHT_COLORS,
   DEFAULT_TRIGGER_REGEX,
+  parseHighlightColors,
+  parseHighlightTypes,
   resolveSettings,
+  SEMANTIC_HIGHLIGHT_TYPES,
   splitPathList
 } from '../src/config';
 
@@ -146,5 +150,41 @@ describe('configSchema', () => {
       expect(entry.title, `${key} needs a title`).toBeTruthy();
       expect(entry.description, `${key} needs a description`).toBeTruthy();
     }
+  });
+});
+
+describe('parseHighlightTypes', () => {
+  it('defaults to every kind when the setting is absent', () => {
+    expect(parseHighlightTypes(undefined)).toEqual([...SEMANTIC_HIGHLIGHT_TYPES]);
+  });
+
+  it('keeps only known kinds and fixes their order', () => {
+    expect(parseHighlightTypes(['bogus', 'self', 'function'])).toEqual([
+      'function',
+      'self'
+    ]);
+  });
+
+  it('honors an explicit empty list', () => {
+    expect(parseHighlightTypes([])).toEqual([]);
+  });
+});
+
+describe('parseHighlightColors', () => {
+  it('fills in every default when nothing is set', () => {
+    expect(parseHighlightColors(undefined)).toEqual(DEFAULT_HIGHLIGHT_COLORS);
+  });
+
+  it('layers overrides onto the defaults', () => {
+    const colors = parseHighlightColors({ function: '#123456' });
+    expect(colors.function).toBe('#123456');
+    expect(colors.class).toBe(DEFAULT_HIGHLIGHT_COLORS.class);
+  });
+
+  it('reads a Color object via toHexString', () => {
+    const colors = parseHighlightColors({
+      self: { toHexString: () => '#abcdef' }
+    });
+    expect(colors.self).toBe('#abcdef');
   });
 });

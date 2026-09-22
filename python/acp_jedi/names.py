@@ -56,16 +56,78 @@ def definition_type(definition: Any) -> str:
 HIGHLIGHT_TYPES = {"function", "class", "param", "module", "property"}
 
 
+def is_dunder(text: str) -> bool:
+    """A ``__name__`` special method or attribute, e.g. ``__init__``.
+
+    Requires more than the two pairs of underscores themselves, so ``____`` is
+    not mistaken for one.
+    """
+    return len(text) > 4 and text.startswith("__") and text.endswith("__")
+
+
+def decorator_head_column(line: str) -> int | None:
+    """Column of the identifier a decorator line applies, or ``None``.
+
+    A decorator is an ``@`` that opens a logical line, so only a line whose first
+    non-space character is ``@`` qualifies - this deliberately ignores the binary
+    ``@`` matrix-multiply operator in ``a @ b``, which always has an operand
+    before it. The column returned points at the first identifier of the
+    decorator expression (``app`` in ``@app.route``), which is the only name this
+    can place with certainty.
+    """
+    stripped = line.lstrip()
+    if not stripped.startswith("@"):
+        return None
+    column = len(line) - len(stripped) + 1
+    while column < len(line) and line[column] == " ":
+        column += 1
+    return column
+
+
+def decorator_span(line: str) -> tuple[int, int] | None:
+    """The ``[start, end)`` columns covering a decorator expression, or ``None``.
+
+    Spans the dotted name after ``@`` up to the call paren, so every part of
+    ``@app.route`` is placed as a decorator while the arguments in
+    ``@app.route("/")`` are left to their own classification.
+    """
+    start = decorator_head_column(line)
+    if start is None:
+        return None
+    paren = line.find("(", start)
+    return start, paren if paren != -1 else len(line)
+
+
+def in_function_scope(name: Any) -> bool:
+    """Whether a name is declared directly inside a function (a method body).
+
+    Used to keep the ``self`` class honest: ``self``/``cls`` only mean the
+    instance when they sit in a method, so a module-level variable that happens
+    to be named ``self`` is not miscolored.
+    """
+    try:
+        parent = name.parent()
+    except Exception:
+        return False
+    return getattr(parent, "type", None) == "function"
+
+
 def highlight_type(name: Any) -> str:
     """The highlight class for a name, tuned for coloring rather than icons.
 
     Unlike :func:`definition_type` - which serves autocomplete icons and so
     folds ``param`` into ``variable`` and ``module`` into ``import`` - this keeps
-    the distinctions that are worth a color of their own. Everything it cannot
-    place (statements, instances, unresolved references) becomes ``variable``,
-    the plain-identifier class.
+    the distinctions that are worth a color of their own. The implicit first
+    parameters ``self`` and ``cls`` get their own ``self`` class, since most
+    themes color them apart from ordinary parameters; their references inside the
+    method body - which Jedi reports as instances - are colored to match, so the
+    name reads the same wherever it appears. Dunder methods (``__init__`` and the
+    like) get the ``magic`` class. Everything it cannot place (statements, other
+    instances, unresolved references) becomes ``variable``, the plain-identifier
+    class.
     """
     name_type = getattr(name, "type", None)
+    name_text = getattr(name, "name", "") or ""
     try:
         is_built_in = name.in_builtin_module()
     except Exception:
@@ -73,10 +135,21 @@ def highlight_type(name: Any) -> str:
 
     if name_type not in ("import", "keyword") and is_built_in:
         return "builtin"
-    if name_type == "statement" and getattr(name, "name", "").isupper():
+    if name_type == "statement" and name_text.isupper():
         return "constant"
     if name_type == "import":
         return "module"
+    # The `param` binding and its `instance` references share the `self` class so
+    # `self`/`cls` reads the same at the definition and everywhere it is used -
+    # but only inside a method, so a module-level `self` is left alone.
+    if (
+        name_type in ("param", "instance")
+        and name_text in IMPLICIT_FIRST_PARAMS
+        and in_function_scope(name)
+    ):
+        return "self"
+    if name_type in ("function", "property") and is_dunder(name_text):
+        return "magic"
     if name_type in HIGHLIGHT_TYPES:
         return name_type
     return "variable"

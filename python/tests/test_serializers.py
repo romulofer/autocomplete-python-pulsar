@@ -448,6 +448,94 @@ def test_highlights_classifies_builtins_and_constants():
     ]
 
 
+def test_highlights_marks_decorator_heads_from_the_source():
+    source = "@deco\ndef run():\n    pass\n"
+    script = FakeScript(
+        names=[
+            FakeName(name="deco", type="function", line=1, column=1),
+            FakeName(name="run", type="function", line=2, column=4),
+        ]
+    )
+    assert [entry["type"] for entry in serializers.highlights(script, source)] == [
+        "decorator",
+        "function",
+    ]
+
+
+def test_highlights_marks_every_dotted_part_of_a_decorator():
+    source = "@app.route('/x')\ndef view():\n    pass\n"
+    script = FakeScript(
+        names=[
+            FakeName(name="app", type="statement", line=1, column=1),
+            FakeName(name="route", type="function", line=1, column=5),
+            FakeName(name="view", type="function", line=2, column=4),
+        ]
+    )
+    # `app` would otherwise be a plain variable and drop out; inside the span it
+    # is a decorator. The string argument is not a name, so nothing leaks past
+    # the paren.
+    assert [entry["type"] for entry in serializers.highlights(script, source)] == [
+        "decorator",
+        "decorator",
+        "function",
+    ]
+
+
+def test_highlights_leaves_decorator_call_arguments_alone():
+    source = "@wrap(handler)\ndef view():\n    pass\n"
+    script = FakeScript(
+        names=[
+            FakeName(name="wrap", type="function", line=1, column=1),
+            FakeName(name="handler", type="function", line=1, column=6),
+            FakeName(name="view", type="function", line=2, column=4),
+        ]
+    )
+    # `handler` sits past the paren, so it keeps its own class.
+    assert [entry["type"] for entry in serializers.highlights(script, source)] == [
+        "decorator",
+        "function",
+        "function",
+    ]
+
+
+def test_highlights_does_not_read_a_matmul_as_a_decorator():
+    source = "result = a @ b\n"
+    script = FakeScript(
+        names=[FakeName(name="run", type="function", line=1, column=11)]
+    )
+    # column 11 is `b`, preceded by `@`, but the line does not start with one.
+    assert [entry["type"] for entry in serializers.highlights(script, source)] == [
+        "function"
+    ]
+
+
+def test_highlights_classifies_dunder_methods_as_magic():
+    script = FakeScript(
+        names=[
+            FakeName(name="__init__", type="function", line=1, column=4),
+            FakeName(name="run", type="function", line=2, column=4),
+        ]
+    )
+    assert [entry["type"] for entry in serializers.highlights(script)] == [
+        "magic",
+        "function",
+    ]
+
+
+def test_highlights_classifies_self_apart_from_ordinary_params():
+    method = FakeName(type="function")
+    script = FakeScript(
+        names=[
+            FakeName(name="self", type="param", line=1, column=8, parent_name=method),
+            FakeName(name="value", type="param", line=1, column=14),
+        ]
+    )
+    assert [entry["type"] for entry in serializers.highlights(script)] == [
+        "self",
+        "param",
+    ]
+
+
 def test_highlights_leaves_plain_identifiers_to_the_grammar():
     # Statements and unresolved references classify as `variable`; the daemon
     # drops them so the grammar keeps coloring them rather than being flattened.
